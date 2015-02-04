@@ -1,0 +1,56 @@
+pipe results
+latency 1048576: 464803
+latency 4: 1795
+latency 16: 1633
+latency 64: 1647
+latency 256: 1660
+latency 1024: 1798
+latency 4096: 2242
+latency 16384: 5300
+latency 65536: 14096
+latency 262144: 63406
+latency 524288: 137535
+throughput 32MB: 8873371
+throughput 64MB: 19109349
+throughput 128MB: 38542161
+throughput 256MB: 77683255
+throughput 512MB: 150825466
+throughput 1024MB: 312512318
+
+socket results
+latency 1048576: 378130
+latency 4: 4750
+latency 16: 3730
+latency 64: 3525
+latency 256: 3978
+latency 1024: 3859
+latency 4096: 5486
+latency 16384: 6479
+latency 65536: 16751
+latency 262144: 43529
+latency 524288: 80405
+throughput 32MB: 5241993
+throughput 64MB: 10354153
+throughput 128MB: 20651843
+throughput 256MB: 41329123
+throughput 512MB: 82485580
+throughput 1024MB: 166024775
+
+mmap results
+latency 1048576: 379636
+latency 4: 1989
+latency 16: 1633
+latency 64: 1633
+latency 256: 1674
+latency 1024: 1759
+latency 4096: 2765
+latency 16384: 2920
+latency 65536: 6620
+latency 262144: 20546
+latency 524288: 42954
+throughput 32MB: 12505366
+throughput 64MB: 16200448
+throughput 128MB: 31046255
+throughput 256MB: 62157290
+throughput 512MB: 125503386
+throughput 1024MB: 257193929
