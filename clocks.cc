@@ -20,6 +20,7 @@ inline void repeat<0>(double &result) {
 }
 
 // gettimeofday
+
 template<int d>
 inline int test_gettimeofday(double &result) {
     struct timeval t0, t1;
