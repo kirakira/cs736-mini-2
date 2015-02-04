@@ -224,6 +224,9 @@ void my_copy(char *dst, const char* src, int size, int srcsize) {
 }
 
 void test_mmap() {
+    // Lessons learned:
+    // 1. Use a state machine to synchronize.
+
     int prot = PROT_READ | PROT_WRITE;
     int flags = MAP_SHARED | MAP_ANONYMOUS;
     shared_data *data = (shared_data *) mmap(NULL, sizeof(shared_data), prot, flags, -1, 0);
