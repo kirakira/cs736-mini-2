@@ -1,0 +1,148 @@
+\documentclass{article}
+\usepackage{hyperref}
+\usepackage{url}
+
+\title{Benchmarking Interprocess Communications in Linux}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+Linux, as well as other most popular operating systems in the world, gives each running process a private address space.
+The memory space of one process is completely invisible to other processes.
+This simple design provides protection for free, however it also lacks the flexibility to share data among processes, compared to a shared address space architecture like what is used by Opal \cite{opal}.
+For applications where data has to be shared across processes, Linux provides many ways to achieve this.
+Among those, the three most popular way of sharing data across processes is \texttt{pipe}, inet socket, and sharing memory via \texttt{mmap}.
+As interprocess communications are so widely used by programs and being such a fundamental mechanism provided by the operating system, its performance matters a lot.
+In this report, we measure and compare the latencies and throughputs of the three interprocess communication mechanisms.
+
+\texttt{pipe} is a system call provided by Linux.
+It allows a process to create a unidirectional communication channel.
+Message delivery on this channel is guaranteed to be in-order.
+Programs can read and write this on this channel just like reading and writing regular files.
+\texttt{pipe} is usually used together with \texttt{fork} as a interprocess communication method.
+A typical use would be, the parent process first create two pipes by calling \texttt{pipe} twice, one is from parent to child, and the other is from child to parent.
+Each call to \texttt{pipe} will return two file descriptors, one is for the reading of the pipe, and the other is for the writing of the pipe.
+Then the parent creates the child process by calling \texttt{fork}.
+After calling \texttt{fork}, the child process will inherit all opened file descriptors, in particular the $4$ file descriptors created by \texttt{pipe}.
+Finally the two processes can communicate with each other by calling \texttt{read} and \texttt{write} on the two pipes.
+
+TCP/IP protocol is a prevailing network protocol which guarantees reliability and provides many other desirable features.
+Inet socket is a set of interface provided by Linux for programs to use the TCP/IP protocol.
+Like \texttt{pipe}, TCP/IP is also a stream protocol, which means messages will be delivered in the order they are sent.
+Though usually people use TCP to connect machines over a network, it can also be used by two processes on the same computer.
+This would making inet socket another means of interprocess communication mechanism.
+
+The previous two mechanism are all based on message passing.
+The \texttt{mmap} provides interprocess communication by directly sharing memory between processes.
+\texttt{mmap} is a system call that can map the contents of a file to a block of memory, so that any modification to the memory will be reflected on the file.
+Linux can also create a block of mapped memory not backed by any file.
+In this case, we can call \texttt{mmap} followed by a call to \texttt{fork} to create a block of memory that is to be shared between the parent process and the child process.
+Writes by one process will be directly seen by another process.
+However proper synchronization must be done in order for the two processes to communicate.
+
+As these three methods are fundamentally different, we expect their performance on different workloads to be different as well.
+In this paper we will explore the strengths and weakness in performance of each of the three mechanisms by measure their latencies and throughput on different workloads, and analyze the experiment results.
+We will further investigate the reasons behind experimental data.
+
+The rest of this paper is organized as follows.
+In Section~\ref{sec:overview} we will give a high-level overview of our our experiments, including our objectives and how we are going to achieve them.
+We will also talk about our hypothesis about the results of our experiments.
+In Section~\ref{sec:clocks} we will talk about how we find a best clock for us to measure the times.
+This is very important because all our data will be measured in terms of time, and if we do not have a good timer, none of the data can be trusted.
+In Section~\ref{sec:method} we will explain in detail how we did our experiments.
+In Section~\ref{sec:results} we will demonstrate our experiment results.
+In Section~\ref{sec:conclusions} we draw conclusions from our results.
+
+\section{Overview}
+\label{sec:overview}
+The purpose of our experiments is to evaluate the performance of the three interprocess communication methods.
+As a communication method, its performance is usually represented by its latency and throughput.
+Latency is the time it takes from the point when a message is being passed to the operating system by the sender to send to the point when it is received by the receiver.
+Throughput is the rate at which messages are being transmitted, i.e. how much bytes per second.
+Usually when the size of the message is small, latency will dominate the total time spent on communication.
+When the size of the message is large, size of the message divided by throughput will dominate the total time.
+
+In our experiments, we will measure the time spent on the transmission of a message for each of the three fore-mentioned inter-process communication methods.
+When size of the message is small, this measures latency.
+When size of the message is large, this measures throughput.
+For that purpose, we need to first confirm the accuracy of our clock by doing an experiment on the accuracy of available timing methods on Linux, which will be covered in Section~\ref{sec:clocks}.
+As mentioned earlier, our observed latency and throughput will greatly depend on the size of the message.
+Therefore we would identify the size of the message as a variable that will affect our measurements, and will measure our latencies and throughput on a set of different sizes of messages.
+
+We shall next state our hypothesis about the results of our experiments.
+We will discuss this from two perspectives: for a same communication method, how would the latency or throughput change with regard to the message size?
+For a same message size, how would the latency or throughput change with regard to different communication methods?
+
+\subsection{Expected Results with regard to Message Sizes}
+When size of the message is small, the time spent is dominated by the system overhead of delivering a message, which is basically the latency.
+Since system overhead will not change with the size of the message, we would estimate that our measured time spent will remain constant when message size is small.
+When size of the message gets moderately bigger, system overhead no longer dominates, and the measured time spent should grow with the size of the message.
+When the size of the message gets big enough, system overhead becomes negligible.
+The major component of the time spent becomes the time needed to handle (i.e., copy the message from one place to another) the message, and it should be proportional to the length of the message.
+
+\subsection{Expected Results with regard to Communication Methods}
+In terms of latency, we would expect the latency of \texttt{mmap} to be the lowest.
+The reason is that there is no system call involved when one is trying to write or read the shared memory, and the system overhead should be the smallest.
+Inet socket should have the highest latency because every message transmitted via socket has to go though a complicated TCP protocol procedure.
+In particular, according to the TCP protocol, every sent message must be replied by an ACK packet, which should significantly adds to its latency.
+
+In terms of throughput, we would also expect \texttt{mmap} to be the best.
+This is because in the shared memory model, the system does not have to copy the message.
+However in \texttt{pipe} and socket, the message has to be copied from one buffer to another, and even possibly for several times (e.g., copy from send buffer to a system buffer, then from the system buffer to receive buffer).
+In spite of this, \texttt{pipe} should still be better than socket, because of the added cost of the TCP protocol.
+
+\section{Measuring the Clock Precision}
+\label{sec:clocks}
+Before measuring performance of communication methods, we will first perform experiments to select the best clock to use.
+Since we will use the clock to measure fairly small time intervals, we want the clock to be as accurate as possible, so as to make sure our experiment results can be trusted.
+However accuracy is not the only concern here.
+Some accurate clock will not return a reliable timing for our use cases, as will be explained later.
+
+On Linux, there are many ways to measure how much time spent during two operations.
+In this section we will study the accuracy of three major ways of measuring time: \texttt{gettimeofday}, \texttt{clock\_gettime}, and x86 instruction \texttt{rdtsc}.
+Both \texttt{gettimeofday} and \texttt{clock\_gettime} will return the current system time.
+The difference is that \texttt{clock\_gettime} will provide better accuracy.
+\texttt{rdtsc} is a x86 instruction that will return the value of a counter that how many cycles has passed since last reset.
+To convert the cycle count to real time, one has to divide it by the frequency of the processor.
+We would expect that \texttt{rdtsc} will return the most accurate timing.
+
+\subsection{Methodology}
+To test the accuracy of one timing method, we will measure the smallest number of operations that can be detected by the clock.
+To be precise, we will try to insert some simple operations between two calls to our clock, and then increase the number of operations in between until the return values of the two calls are different.
+If the return values are already different when there is no operations in between, then it means that the resolution of the clock is smaller than the overhead of making a single system call to it.
+
+In our experiment, our test program tries to compute the series given by $a_n=a_{n-1}+1/a_{n-1}$.
+We will first try two consecutive calls to our clock, and see if they would return the same time.
+If so, we will then try to compute the first term of this series using the above recursion, and measure how much time is spent.
+If our measured time is still $0$, we will then measure how much time is spent to compute the next $2$ terms.
+We keep going until our measured time is nonzero when we try to compute $k$ terms, for some $k$.
+We will use the value $k$ to indicate how accurate our clock is: the smaller $k$ is, the more accurate our clock is.
+
+We coded our program in a way such that the computation will not use any loops, so as to minimize the number of instructions to be generated.
+\footnote{This can be done neatly by using a C++ template trick.
+Please refer to our code at \url{https://github.com/kirakira/cs736-mini-2/blob/master/clocks.cc}.}
+In our program, one increment to $k$ corresponds to exactly $3$ added instructions: one division, one addition, and one move.
+Though it is possible to make one computation even simpler, we must be very careful when doing it to prevent the computation from becoming trivial, otherwise the optimizer will be able to eliminate a lot of our code.
+\footnote{One may argue here why not just turn off the optimizer.
+In fact, the way we wrote our program took advantage of the inline function optimization by the optimizer.}
+
+\subsection{Experiment Results}
+Table~\ref{tab:1} summarizes our experiment results.
+For each timer we conducted our experiment for several times, and computed the average of $k$ and its standard deviation.
+The average stands for how accurate the timer is (smaller is more accurate), and the standard deviation stands for how reliable the timer is (smaller is more reliable).
+
+We can see from the results that it takes on average $k=12$ for \texttt{gettimeofday} to detect the time difference.
+For \texttt{clock\_gettime} and \texttt{rdtsc}, we always have $k=0$, which means both of them are more accurate than the limit of what we can measure in this experiment.
+
+\subsection{Conclusion}
+It is clear from the results that \texttt{clock\_gettime} and \texttt{rdtsc} are more accurate than \texttt{gettimeofday}.
+Though in theory \texttt{rdtsc} should be more accurate than \texttt{clock\_gettime}, we are not able to verify this in our experiment.
+However we can confirm that the resolution for \texttt{rdtsc} and \texttt{clock\_gettime} is smaller than the cost of making a function call, which is sufficient for our purposes.
+
+Between the two choices, we eventually decided to use \texttt{clock\_gettime} as our clock.
+The reason is that the value returned by \texttt{rdtsc} is processor-dependent: if our program was running on one CPU core and was switched to another core later, the \texttt{rdtsc} values returned by the $2$ cores are not comparable.
+Unfortunately this will be the case when we perform our coming benchmark: when a program calls \texttt{read} it may block; when later it is ready to wake up it is subject to a context switch, and as a result the process may be put on a different core than the previous one by the operating system.
+Therefore \texttt{rdtsc} does not work well with our benchmark.
+
+\end{document}
