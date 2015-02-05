@@ -51,8 +51,7 @@ We will also talk about our hypothesis about the results of our experiments.
 In Section~\ref{sec:clocks} we will talk about how we find a best clock for us to measure the times.
 This is very important because all our data will be measured in terms of time, and if we do not have a good timer, none of the data can be trusted.
 In Section~\ref{sec:method} we will explain in detail how we did our experiments.
-In Section~\ref{sec:results} we will demonstrate our experiment results.
-In Section~\ref{sec:conclusions} we draw conclusions from our results.
+In Section~\ref{sec:results} we will demonstrate our experiment results and draw conclusions.
 
 \section{Overview}
 \label{sec:overview}
@@ -123,9 +122,9 @@ We coded our program in a way such that the computation will not use any loops, 
 \footnote{This can be done neatly by using a C++ template trick.
 Please refer to our code at \url{https://github.com/kirakira/cs736-mini-2/blob/master/clocks.cc}.}
 In our program, one increment to $k$ corresponds to exactly $3$ added instructions: one division, one addition, and one move.
-Though it is possible to make one computation even simpler, we must be very careful when doing it to prevent the computation from becoming trivial, otherwise the optimizer will be clever enough to eliminate a lot of our code.
+Though it is possible to make one computation even simpler, we must be very careful when doing it to avoid the computation becoming trivial, otherwise the optimizer will be clever enough to eliminate a lot of our code.
 \footnote{One may argue here why not just turn off the optimizer.
-In fact, the way we wrote our program took advantage of the inline function optimization by the optimizer.}
+In fact, the way we wrote our program took advantage of inline function optimizations provided by the optimizer.}
 
 \subsection{Experiment Results}
 Table~\ref{tab:1} summarizes our experiment results.
@@ -144,5 +143,46 @@ Between the two choices, we eventually decided to use \texttt{clock\_gettime} as
 The reason is that the value returned by \texttt{rdtsc} is processor-dependent: if our program was running on one CPU core and was switched to another core later, the \texttt{rdtsc} values returned by the $2$ cores are not comparable.
 Unfortunately this will be the case when we perform our coming benchmark: when a program calls \texttt{read} it may block; when later it is ready to wake up it is subject to a context switch, and as a result the process may be put on a different core than the previous one by the operating system.
 Therefore \texttt{rdtsc} does not work well with our benchmark.
+
+\section{Methodology}
+\label{sec:method}
+In our experiments we want to measure the transmission time of messages of different sizes, i.e. from the point when ``send'' is called by the sender to the point when ``receive'' is returned to the receiver.
+The set of message sizes we decide to use is $4$, $16$, $64$, $256$, $1$K, $4$K, $16$K, $64$K, $256$K, $512$K, $32$M, $64$M, $128$M, $256$M, $512$M, $1$G (unit in bytes).
+Here up everything up to $512$K is supposed to measure the latencies, and starting from $32$M we want to use them to measure throughput.
+
+Though the basic principles are the same no matter we want to measure latencies or throughput, our implementation techniques are slightly different.
+\footnote{Our code is available at \url{https://github.com/kirakira/cs736-mini-2/blob/master/latency.cc}.}
+In order to keep our clock readings as accurate as possible, we want to read our clock only on one side, i.e. only read in the parent process.
+Hence after the child process has completed receiving the message, it must let its parent know by sending an acknowledgement so that the parent can stop its timer.
+Time spent on the acknowledgement is non-negligible when the original transmission time is small, i.e. when we are measuring latencies.
+Therefore when measuring latencies, instead of sending an acknowledgement, we will simply let the child process echo the message it has received so that the time measured by the parent will be the round trip time, and divide it by $2$ will give us an accurate latency.
+When measuring throughput, we can just send a small acknowledgement message instead of echoing the entire message because the time spent on an acknowledgement is negligible compared to original transmission time.
+
+The other thing we have noticed is the first communication always takes much longer than subsequent ones.
+This is understandable because the operating system may decide to do extra initializations on the first communication.
+Since the first communication involves a warm-up process that will not reflect its real performance, we decide not to include it towards our experiment results.
+
+The workflows for measuring \texttt{pipe} and inet sockets are similar.
+We first setup and initialize certain communication channels, either \texttt{pipe} or inet socket.
+Then we call \texttt{fork} to spawn the child process, and after that we are ready to communicate.
+For each message, the parent will first start the timer, send the message through calling \texttt{write}, and wait for the response from child by calling \texttt{read}, and stop the timer; in the meanwhile, the child will first call \texttt{read} to wait for parent's message to be delivered, then depending on whether it is a latency test or a throughput test, it will then call \texttt{write} to either echo the entire message or simply write an acknowledgement.
+
+Measuring \texttt{mmap} is a bit different.
+To send a message we will simply call \texttt{memcpy} to copy our message to the shared memory.
+However we must make use of additional synchronization mechanisms to notify the completion of \texttt{memcpy}.
+In our implementation we decide to use a shared condition variable coupled with a shared state variable.
+There are $3$ possible states during each measurement: $(0)$ parent sending message to child, $(1)$ child sending reply to parent, and $(2)$ parent finalizing measurement (i.e. to stop the timer).
+Initially we are in state $0$ and the parent is awake and the child should sleep on the condition variable.
+At this moment parent shall start the timer and copy the message to shared memory.
+After copying has finished, parent change state variable to $1$, and signal the condition variable, and finally put itself into sleep on the condition variable.
+The child will then wake up, and make a reply to the message, and change state to $2$, and signal the condition variable, and put itself to sleep on the condition variable.
+Then parent would wake up again, stop the timer, and reset the state to $0$ for the next round of message transmission.
+
+An alternative way to using a condition variable is to just use a mutex, and do polling on the state variable instead of sleeping and waiting for being waken.
+We think this is worse than our conditional variable approach because having parent and child competing for a mutex to do polling could possibly waste them a lot of CPU cycles, and thus making our measurements inaccurate.
+
+\section{Results and Conclusions}
+\label{sec:results}
+Figure~\ref{fig:1} shows our test results for latencies, and Figure~\ref{fig:2} shows the results for throughput.
 
 \end{document}
