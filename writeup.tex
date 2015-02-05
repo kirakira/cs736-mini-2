@@ -123,7 +123,7 @@ We coded our program in a way such that the computation will not use any loops, 
 \footnote{This can be done neatly by using a C++ template trick.
 Please refer to our code at \url{https://github.com/kirakira/cs736-mini-2/blob/master/clocks.cc}.}
 In our program, one increment to $k$ corresponds to exactly $3$ added instructions: one division, one addition, and one move.
-Though it is possible to make one computation even simpler, we must be very careful when doing it to prevent the computation from becoming trivial, otherwise the optimizer will be able to eliminate a lot of our code.
+Though it is possible to make one computation even simpler, we must be very careful when doing it to prevent the computation from becoming trivial, otherwise the optimizer will be clever enough to eliminate a lot of our code.
 \footnote{One may argue here why not just turn off the optimizer.
 In fact, the way we wrote our program took advantage of the inline function optimization by the optimizer.}
 
