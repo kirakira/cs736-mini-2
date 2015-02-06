@@ -192,7 +192,7 @@ void test_pipe_and_socket(bool use_pipe) {
 
             clock_gettime(CLOCK_REALTIME, &t1);
 
-            cout << "throughput " << k * nMBs << "MB: " << diff(t0, t1) << endl;
+            cout << "throughput " << k * nMBs << "MB: " << 1e9 * (double) k * (double) nMBs / (double) diff(t0, t1) << " MB/s" << endl;
         }
 
         if (1 != try_write(parent_to_child[1], buffer, 1))
@@ -268,7 +268,6 @@ void test_mmap() {
                 pthread_cond_wait(&data->cond, &data->mutex);
             clock_gettime(CLOCK_REALTIME, &t1);
             data->state = 0;
-            pthread_cond_signal(&data->cond);
             pthread_mutex_unlock(&data->mutex);
 
             cout << "latency " << sizes[i] << ": " << diff(t0, t1) / 2 << endl;
@@ -293,10 +292,9 @@ void test_mmap() {
                 pthread_cond_wait(&data->cond, &data->mutex);
             clock_gettime(CLOCK_REALTIME, &t1);
             data->state = 0;
-            pthread_cond_signal(&data->cond);
             pthread_mutex_unlock(&data->mutex);
 
-            cout << "throughput " << k * nMBs << "MB: " << diff(t0, t1) << endl;
+            cout << "throughput " << k * nMBs << "MB: " << 1e9 * (double) k * (double) nMBs / (double) diff(t0, t1) << " MB/s" << endl;
         }
 
         waitpid(pid, NULL, 0);
