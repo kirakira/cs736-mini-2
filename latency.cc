@@ -268,7 +268,6 @@ void test_mmap() {
                 pthread_cond_wait(&data->cond, &data->mutex);
             clock_gettime(CLOCK_REALTIME, &t1);
             data->state = 0;
-            pthread_cond_signal(&data->cond);
             pthread_mutex_unlock(&data->mutex);
 
             cout << "latency " << sizes[i] << ": " << diff(t0, t1) / 2 << endl;
