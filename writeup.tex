@@ -102,7 +102,7 @@
 
 % *** CITATION PACKAGES ***
 %
-%\usepackage{cite}
+\usepackage{cite}
 % cite.sty was written by Donald Arseneau
 % V1.6 and later of IEEEtran pre-defines the format of the cite.sty package
 % \cite{} output to follow that of IEEE. Loading the cite package will
@@ -123,6 +123,7 @@
 
 
 
+\usepackage{graphicx}
 % *** GRAPHICS RELATED PACKAGES ***
 %
 \ifCLASSINFOpdf
@@ -343,7 +344,6 @@
 % to submit to, of course. )
 
 
-
 \begin{document}
 %
 % paper title
@@ -400,8 +400,10 @@ menghui@cs.wisc.edu}}
 
 
 \begin{abstract}
-%\boldmath
-The abstract goes here.
+    In this paper we present a series of experiements to benchmark the performance of three interprocess communication mechanisms in Linux: \texttt{pipe}, inet socket, and \texttt{mmap}.
+    We will first conduct experiements to select a best timer for our use.
+    Then we will measure the latency and throughput of the three mechanisms using the timer of our choice.
+    From experiment results, we see that \texttt{mmap} has the lowest latency, while inet sockets has the highest throughput.
 \end{abstract}
 % IEEEtran.cls defaults to using nonbold math in the Abstract.
 % This preserves the distinction between vectors and scalars. However,
@@ -428,17 +430,18 @@ The abstract goes here.
 \section{Introduction}
 Linux, as well as other most popular operating systems in the world, gives each running process a private address space.
 The memory space of one process is completely invisible to other processes.
-This simple design provides protection for free, however it also lacks the flexibility to share data among processes, compared to a shared address space architecture like what is used by Opal \cite{opal}.
-For applications where data has to be shared across processes, Linux provides many ways to achieve this.
-Among those, the three most popular way of sharing data across processes is \texttt{pipe}, inet socket, and sharing memory via \texttt{mmap}.
-As interprocess communications are so widely used by programs and being such a fundamental mechanism provided by the operating system, its performance matters a lot.
+This simple design provides protection for free, however it also lacks the flexibility to share data among processes, contrast to a single address space architecture like Opal \cite{chase1994sharing}.
+For applications that require data sharing among processes, Linux provides several different methods for interprocess communication.
+Among those, the three most popular ways of sharing data across processes is \texttt{pipe}, inet socket, and sharing memory via \texttt{mmap}.
+The first two mechanisms are based on message passing model, as was used by Nucleus \cite{hansen1970nucleus}.
+Since interprocess communication is such a fundamental mechanism provided by the operating system and so widely used by programs, its performance matters a lot.
 In this report, we measure and compare the latencies and throughputs of the three interprocess communication mechanisms.
 
 \texttt{pipe} is a system call provided by Linux.
 It allows a process to create a unidirectional communication channel.
 Message delivery on this channel is guaranteed to be in-order.
-Programs can read and write this on this channel just like reading and writing regular files.
-\texttt{pipe} is usually used together with \texttt{fork} as a interprocess communication method.
+Programs can read and write on this channel just like reading and writing regular files.
+\texttt{pipe} is usually used together with \texttt{fork}, a syscall originated in Unix \cite{ritchie1978unix}, as a interprocess communication method.
 A typical use would be, the parent process first create two pipes by calling \texttt{pipe} twice, one is from parent to child, and the other is from child to parent.
 Each call to \texttt{pipe} will return two file descriptors, one is for the reading of the pipe, and the other is for the writing of the pipe.
 Then the parent creates the child process by calling \texttt{fork}.
@@ -457,17 +460,17 @@ The \texttt{mmap} provides interprocess communication by directly sharing memory
 Linux can also create a block of mapped memory not backed by any file.
 In this case, we can call \texttt{mmap} followed by a call to \texttt{fork} to create a block of memory that is to be shared between the parent process and the child process.
 Writes by one process will be directly seen by another process.
-However proper synchronization must be done in order for the two processes to communicate.
+However proper synchronization must be done for the two processes to communicate.
 
 As these three methods are fundamentally different, we expect their performance on different workloads to be different as well.
 In this paper we will explore the strengths and weakness in performance of each of the three mechanisms by measure their latencies and throughput on different workloads, and analyze the experiment results.
 We will further investigate the reasons behind experimental data.
 
 The rest of this paper is organized as follows.
-In Section~\ref{sec:overview} we will give a high-level overview of our our experiments, including our objectives and how we are going to achieve them.
+In Section~\ref{sec:overview} we will give a high-level overview of our experiments, including our objectives and how we are going to achieve them.
 We will also talk about our hypothesis about the results of our experiments.
 In Section~\ref{sec:clocks} we will talk about how we find a best clock for us to measure the times.
-This is very important because all our data will be measured in terms of time, and if we do not have a good timer, none of the data can be trusted.
+This is very important because all our data will be measured with time, and if we do not have a good timer, none of our data can be trusted.
 In Section~\ref{sec:method} we will explain in detail how we did our experiments.
 In Section~\ref{sec:results} we will demonstrate our experiment results and draw conclusions.
 
@@ -482,7 +485,7 @@ When the size of the message is large, size of the message divided by throughput
 
 In our experiments, we will measure the time spent on the transmission of a message for each of the three fore-mentioned inter-process communication methods.
 When size of the message is small, this measures latency.
-When size of the message is large, this measures throughput.
+When size of the message is large, the measured time divided by the size of the message gives throughput.
 For that purpose, we need to first confirm the accuracy of our clock by doing an experiment on the accuracy of available timing methods on Linux, which will be covered in Section~\ref{sec:clocks}.
 As mentioned earlier, our observed latency and throughput will greatly depend on the size of the message.
 Therefore we would identify the size of the message as a variable that will affect our measurements, and will measure our latencies and throughput on a set of different sizes of messages.
@@ -492,11 +495,12 @@ We will discuss this from two perspectives: for a same communication method, how
 For a same message size, how would the latency or throughput change with regard to different communication methods?
 
 \subsection{Expected Results with regard to Message Sizes}
-When size of the message is small, the time spent is dominated by the system overhead of delivering a message, which is basically the latency.
-Since system overhead will not change with the size of the message, we would estimate that our measured time spent will remain constant when message size is small.
-When size of the message gets moderately bigger, system overhead no longer dominates, and the measured time spent should grow with the size of the message.
-When the size of the message gets big enough, system overhead becomes negligible.
-The major component of the time spent becomes the time needed to handle (i.e., copy the message from one place to another) the message, and it should be proportional to the length of the message.
+Our basic theory will be the measured time spent $t=c+s/r$, where $c$ is the system overhead for delivering one message, e.g. the cost of setting up the communication channel, doing initialization, kind of stuff; $s$ is the size of the message; $r$ is the throughput of the communication mechanism.
+Since system overhead will not change with the size of the message, we would estimate that our measured latency will remain constant when $s$ is small.
+When $s$ gets moderately bigger, system overhead no longer dominates, and the measured latency should increase with $s$
+When $s$ gets big enough, $c$ becomes negligible.
+The major component of the latency spent becomes the time needed to handle (i.e., copy the message from one place to another) the message, and it should be proportional to the length of the message.
+When computing throughput, since $s$ will be large, our measured throughput should remain constant $r$.
 
 \subsection{Expected Results with regard to Communication Methods}
 In terms of latency, we would expect the latency of \texttt{mmap} to be the lowest.
@@ -520,14 +524,14 @@ On Linux, there are many ways to measure how much time spent during two operatio
 In this section we will study the accuracy of three major ways of measuring time: \texttt{gettimeofday}, \texttt{clock\_gettime}, and x86 instruction \texttt{rdtsc}.
 Both \texttt{gettimeofday} and \texttt{clock\_gettime} will return the current system time.
 The difference is that \texttt{clock\_gettime} will provide better accuracy.
-\texttt{rdtsc} is a x86 instruction that will return the value of a counter that how many cycles has passed since last reset.
+\texttt{rdtsc} is a x86 instruction that will return the value of a counter that how many cycles have passed since last reset.
 To convert the cycle count to real time, one has to divide it by the frequency of the processor.
-We would expect that \texttt{rdtsc} will return the most accurate timing.
+Our prediction is that \texttt{rdtsc} will be the most accurate.
 
 \subsection{Methodology}
-To test the accuracy of one timing method, we will measure the smallest number of operations that can be detected by the clock.
-To be precise, we will try to insert some simple operations between two calls to our clock, and then increase the number of operations in between until the return values of the two calls are different.
-If the return values are already different when there is no operations in between, then it means that the resolution of the clock is smaller than the overhead of making a single system call to it.
+To test the accuracy of each timing method, we measure the smallest number of operations that can be detected by the clock.
+To be precise, we try to insert some simple operations between two calls to our clock, and then increase the number of operations in between until the return values of the two calls are different.
+If the return values are already different when there is no operation in between, it means that the resolution of the clock is smaller than the overhead of making a single system call.
 
 In our experiment, our test program tries to compute the series given by $a_n=a_{n-1}+1/a_{n-1}$.
 We will first try two consecutive calls to our clock, and see if they would return the same time.
@@ -545,8 +549,19 @@ Though it is possible to make one computation even simpler, we must be very care
 In fact, the way we wrote our program took advantage of inline function optimizations provided by the optimizer.}
 
 \subsection{Experiment Results}
+\begin{table}
+    \centering
+    \begin{tabular}{ccccccccc}
+        {} & {} & {} & {} & {} & {} & {} & avg & sd \\
+        \texttt{gettimeofday} & $14$ & $22$ & $14$ & $8$ & $\cdots$ & $10$ & $12.86$ & $5.26$ \\
+        \texttt{clock\_gettime} & $0$ & $0$ & $0$ & $0$ & $\cdots$ & $0$ & $0$ & $0$ \\
+        \texttt{rdtsc} & $0$ & $0$ & $0$ & $0$ & $\cdots$ & $0$ & $0$ & $0$ \\
+    \end{tabular}
+    \caption{$k$ values of three timing methods.}
+    \label{tab:1}
+\end{table}
 Table~\ref{tab:1} summarizes our experiment results.
-For each timer we conducted our experiment for several times, and computed the average of $k$ and its standard deviation.
+For each timer we conducted our experiment for $100$ times, and computed the average of $k$ and its standard deviation.
 The average stands for how accurate the timer is (smaller is more accurate), and the standard deviation stands for how reliable the timer is (smaller is more reliable).
 
 We can see from the results that it takes on average $k=12$ for \texttt{gettimeofday} to detect the time difference.
@@ -565,6 +580,7 @@ Therefore \texttt{rdtsc} does not work well with our benchmark.
 \section{Methodology}
 \label{sec:method}
 In our experiments we want to measure the transmission time of messages of different sizes, i.e. from the point when ``send'' is called by the sender to the point when ``receive'' is returned to the receiver.
+When measuring latencies, the meansured time is just latencies; when measuring throughput, the measured time divided by the size of the message is the measured throughput.
 The set of message sizes we decide to use is $4$, $16$, $64$, $256$, $1$K, $4$K, $16$K, $64$K, $256$K, $512$K, $32$M, $64$M, $128$M, $256$M, $512$M, $1$G (unit in bytes).
 Here up everything up to $512$K is supposed to measure the latencies, and starting from $32$M we want to use them to measure throughput.
 
@@ -601,8 +617,36 @@ We think this is worse than our conditional variable approach because having par
 
 \section{Results and Conclusions}
 \label{sec:results}
+\begin{figure}
+    \centering
+    \includegraphics[width=8.5cm]{latency}
+    \caption{Latency against message size.}
+    \label{fig:1}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=8.5cm]{throughput}
+    \caption{Throughput against message size.}
+    \label{fig:2}
+\end{figure}
 Figure~\ref{fig:1} shows our test results for latencies, and Figure~\ref{fig:2} shows the results for throughput.
 
+\subsection{Latency}
+We can see from Figure~\ref{fig:1} that for any fixed type of communication mechanism, its latencies with different message sizes will first remain constant, then increase proportionally with the size of the message.
+This is as expected because for small messages the system overhead for delivering a message will dominate the total transmission time.
+When the size of the message gets bigger, the cost of actually transmitting the message starts to play a role.
+
+When considering different communication mechanisms, it turns out that \texttt{mmap} has the lowest latency, then \texttt{pipe}, and inet socket is the worst.
+This is because communicate using \texttt{mmap} does not requiring making syscalls, and thus has the lowest overhead.
+Messages sent through inet socket has to go through a complicated TCP protocol, which adds significantly to the cost.
+
+\subsection{Throughput}
+We can see from Figure~\ref{fig:2} that for any fixed type of communication mechanism, its throughput is approximately a constant.
+This is also as expected because when transmitting a large message, the major time spent on the transmission should be copying the message from the send buffer to the receive buffer (or from send buffer to shared memory if using \texttt{mmap}), which is proportional to the size of the message.
+
+When considereing different communication mechanisms, it turns out that inet socket has the highest throughput, and \texttt{pipe} is the worst.
+This is slightly out of our expectations.
+We would guess the reason to be that Linux has spent a lot of efforts to optimize the performance of TCP/IP, while the \texttt{map} approach has paid too much price for synchronizations.
 
 % references section
 
@@ -618,13 +662,12 @@ Figure~\ref{fig:1} shows our test results for latencies, and Figure~\ref{fig:2} 
 % <OR> manually copy in the resultant .bbl file
 % set second argument of \begin to the number of references
 % (used to reserve space for the reference number labels box)
-\begin{thebibliography}{1}
 
-\bibitem{IEEEhowto:kopka}
-H.~Kopka and P.~W. Daly, \emph{A Guide to \LaTeX}, 3rd~ed.\hskip 1em plus
-  0.5em minus 0.4em\relax Harlow, England: Addison-Wesley, 1999.
+\bibliographystyle{IEEEtran}
+\bibliography{ref}
 
-\end{thebibliography}
+%\begin{thebibliography}{1}
+%\end{thebibliography}
 
 
 
